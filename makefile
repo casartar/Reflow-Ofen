@@ -52,9 +52,9 @@ MCU = atmega48
 # This is only used to define F_OSC in all assembler and c-sources.
 #F_OSC = 1200000
 #F_CPU = 32768
-#F_CPU = 1000000
+F_CPU = 1000000
 #F_CPU = 4800000
-F_CPU = 8000000
+#F_CPU = 8000000
 #F_CPU = 11059200
 
 # Output format. (can be srec, ihex, binary)
@@ -65,7 +65,7 @@ TARGET = main
 
 
 # List C source files here. (C dependencies are automatically generated.)
-SRC = $(TARGET).c uart.c adc.c
+SRC = $(TARGET).c uart.c adc.c lcd-routines.c debounce.h
 
 
 # List Assembler source files here.
@@ -217,6 +217,8 @@ AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS += $(AVRDUDE_NO_VERIFY)
 AVRDUDE_FLAGS += $(AVRDUDE_VERBOSE)
 AVRDUDE_FLAGS += $(AVRDUDE_ERASE_COUNTER)
+#ISP FREQUENZ???
+AVRDUDE_FLAGS += -B 20
 
 
 
