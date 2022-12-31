@@ -8,12 +8,14 @@
 #include "uart.h"
 #include "debounce.h"
 
-#define PHASE_IDLE	0
-#define PHASE_1		1	// Heat up 1
-#define PHASE_2		2	// Heat up 2
-#define PHASE_3		3	// Reflow 1
-#define PHASE_4		4	// Reflow 2
-#define PHASE_5		5	// Cool down
+enum phases{
+	PHASE_IDLE = 0,
+	PHASE_1,	// Heat up 1
+	PHASE_2,	// Heat up 2
+	PHASE_3,	// Reflow 1
+	PHASE_4,	// Reflow 2
+	PHASE_5		// Cool down
+};
 
 #define RELAIS_PORT		PORTD 
 #define RELAIS_DDR		DDRD
@@ -29,15 +31,13 @@ uint8_t set_relais(uint16_t setPoint, int32_t temperature);
 void display_values (uint16_t time_step,uint16_t setPoint, int32_t temperature);
 
 uint8_t start_flag = 0;
+volatile enum phases phase = PHASE_IDLE;
 
 int main (void)
 {
 	adc_init();
 	timer1_init();
 	uart_init();
-	lcd_init();
-	lcd_clear();
-	lcd_string("Bereit");
 	uart_put_s("Step;Soll (deg);Ist (deg)\r\n");
 	// CSV-format
 	RELAIS_DDR |= (1 << RELAIS);
@@ -94,6 +94,38 @@ uint8_t set_relais(uint16_t setPoint, int32_t temperature)
 void display_values (uint16_t time_step,uint16_t setPoint, int32_t temperature)
 {
 	char Buffer[20];
+
+	lcd_init();
+
+	switch (phase)
+	{
+	case PHASE_IDLE:
+		lcd_clear();
+		lcd_string("Bereit");
+		break;
+	case PHASE_1:
+		lcd_home();
+		lcd_string("Phase 1");
+		break;
+	case PHASE_2:
+		lcd_home();
+		lcd_string("Phase 2");
+		break;
+	case PHASE_3:
+		lcd_home();
+		lcd_string("Phase 3");
+		break;
+	case PHASE_4:
+		lcd_home();
+		lcd_string("Phase 4");
+		break;
+	case PHASE_5:
+		lcd_home();
+		lcd_string("Phase 5");
+		break;
+
+	}
+
 	sprintf(Buffer,"%hu;%hu;%ld\r\n",time_step,setPoint,temperature);
 	uart_put_s(Buffer);
 	
@@ -110,14 +142,13 @@ void display_values (uint16_t time_step,uint16_t setPoint, int32_t temperature)
 ISR (TIMER1_OVF_vect)
 {
 	static volatile uint16_t 	time_step 	= 0;
-	static volatile uint8_t 	phase 		= 0;
 	uint16_t 	setPoint 	= 0;
 	int32_t 	temperature = 0;
 	
 	PORTD ^= (1 << PD6);	// Debug
 	
 	//724.62 x-503.723
-	temperature = ADC_Read_Avg	( 5, 32 );
+	temperature = ADC_Read_Avg	( 0, 32 );
 	temperature = (temperature*275)/64;		//mV
 	temperature = ((-temperature*724)+503000)/1000;	//°C
 	
@@ -127,15 +158,10 @@ ISR (TIMER1_OVF_vect)
 			if (start_flag)
 			{
 				phase = PHASE_1;
-				lcd_home();
-				lcd_string("Phase 1");
 				time_step = 0;
 			}
 			// Temperature update all the time
-			lcd_setcursor(9,1);
-			char Buffer[20];
-			sprintf(Buffer,"Ist:%03ld",temperature);
-			lcd_string(Buffer);
+			display_values(0,0, temperature);
 		break;
 		case PHASE_1:
 			setPoint = 20 + time_step;
@@ -145,16 +171,12 @@ ISR (TIMER1_OVF_vect)
 			{
 				phase = PHASE_2;
 				time_step = 0;
-				lcd_home();
-				lcd_string("Phase 2");
 			}
 			if (!start_flag)
 			{
 				// abort condition
 				phase = PHASE_IDLE;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_clear();
-				lcd_string("Bereit");
 			}
 		break;
 		case PHASE_2:
@@ -165,36 +187,29 @@ ISR (TIMER1_OVF_vect)
 			{
 				phase = PHASE_3;
 				time_step = 0;
-				lcd_home();
-				lcd_string("Phase 3");
 			}
 			if (!start_flag)
 			{
 				// abort condition
 				phase = PHASE_IDLE;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_clear();
-				lcd_string("Bereit");
 			}
 		break;
 		case PHASE_3:
-			setPoint = 190 + (time_step*30)/17;
+			//(250-190)/38
+			setPoint = 190 + (time_step*30)/19;
 			set_relais(setPoint, temperature);
 			display_values(time_step,setPoint, temperature);
 			if (time_step >= 38)
 			{
 				phase = PHASE_4;
 				time_step = 0;
-				lcd_home();
-				lcd_string("Phase 4");
 			}
 			if (!start_flag)
 			{
 				// abort condition
 				phase = PHASE_IDLE;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_clear();
-				lcd_string("Bereit");
 			}
 		break;
 		case PHASE_4:
@@ -206,16 +221,12 @@ ISR (TIMER1_OVF_vect)
 				phase = PHASE_5;
 				time_step = 0;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_home();
-				lcd_string("Phase 5");
 			}
 			if (!start_flag)
 			{
 				// abort condition
 				phase = PHASE_IDLE;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_clear();
-				lcd_string("Bereit");
 			}
 		break;
 		case PHASE_5:
@@ -227,8 +238,6 @@ ISR (TIMER1_OVF_vect)
 			{
 				phase = PHASE_IDLE;
 				RELAIS_PORT &= ~(1 << RELAIS);
-				lcd_clear();
-				lcd_string("Bereit");
 				start_flag = 0;		// In case abortion by low temperature
 			}
 		break;
